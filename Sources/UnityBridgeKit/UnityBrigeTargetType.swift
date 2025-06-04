@@ -22,10 +22,6 @@ public protocol UnityBridgeTargetType: Encodable, Sendable {
 
 extension UnityBridgeTargetType {
     
-    public var id: String {
-        return UUID().uuidString
-    }
-    
     public var parameters: [String: Sendable]? {
         return nil
     }

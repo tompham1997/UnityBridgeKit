@@ -22,18 +22,14 @@ public struct UnityCallbackProviderData: Sendable {
 }
 
 public actor UnityBridgeAPIClient {
-    
-    private let decoder: DecoderProtocol
     private let logger: Logger
     private let unityCallbackProvider: (UnityCallbackProviderData) async throws -> Void
     private var cancellables: Set<AnyCancellable> = []
     
     public init(
-        decoder: DecoderProtocol,
         logger: Logger,
         unityCallbackProvider: sending @escaping @isolated(any) (UnityCallbackProviderData) async throws -> Void
     ) {
-        self.decoder = decoder
         self.logger = logger
         self.unityCallbackProvider = unityCallbackProvider
     }
