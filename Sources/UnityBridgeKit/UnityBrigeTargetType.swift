@@ -7,7 +7,7 @@
 
 import Foundation
 
-public protocol UnityBridgeTargetType: Encodable, Sendable {
+public protocol UnityBridgeTargetType: Equatable, Encodable, Sendable {
     
     var eventName: String { get }
     

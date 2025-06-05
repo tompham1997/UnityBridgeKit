@@ -21,10 +21,9 @@ public struct UnityCallbackProviderData: Sendable {
     }
 }
 
-public actor UnityBridgeAPIClient {
+public class UnityBridgeAPIClient {
     private let logger: Logger
     private let unityCallbackProvider: (UnityCallbackProviderData) async throws -> Void
-    private var cancellables: Set<AnyCancellable> = []
     
     public init(
         logger: Logger,
@@ -35,61 +34,26 @@ public actor UnityBridgeAPIClient {
     }
 }
 
-extension UnityBridgeAPIClient: UnityBridgeAPIClientProtocol {
+extension UnityBridgeAPIClient: UnityBridgeAPIClientProtocol, @unchecked Sendable {
     public func request(target: any UnityBridgeTargetType) async throws(UnityBridgeAPIClientError) -> Data {
         logger.info("Started calling request: \(target)")
         let encodedJSONRequestData = try getEncodedJSONRequestData(target: target)
-        
         defer {
             logger.info("Completed calling request: \(target)")
         }
         
         Task {
             try await performWithSmallestDelay {
-               try await performUnityCallback(eventName: target.eventName, id: target.id, encodedJSONRequestData: encodedJSONRequestData)
+                try await performUnityCallback(eventName: target.eventName, id: target.id, encodedJSONRequestData: encodedJSONRequestData)
             }
         }
         
-        do {
-            return try await withCheckedThrowingContinuation { continuation in
-                NotificationCenter.default.publisher(for: target.notificationName, object: nil)
-                    .sink { [weak self] notification in
-                        guard let self else {
-                            continuation.resume(throwing: UnityBridgeAPIClientError.callingRequestWhileClientIsDestroyed)
-                            return
-                        }
-                        
-                        guard let userInfo = notification.userInfo else {
-                            continuation.resume(throwing: UnityBridgeAPIClientError.receivedInvalidData)
-                            return
-                        }
-                        
-                        guard let id = userInfo["id"] as? String, id.isNotEmpty, id == target.id else {
-                            return
-                        }
-                        
-                        guard let jsonData = userInfo["data"] as? String, jsonData.isNotEmpty else {
-                            continuation.resume(throwing: UnityBridgeAPIClientError.receivedInvalidData)
-                            return
-                        }
-                        
-                        logger.info("Received JSON data: \(jsonData)")
-                        
-                        guard let data = jsonData.data(using: .utf8) else {
-                            continuation.resume(throwing: UnityBridgeAPIClientError.receivedInvalidJSONData(content: jsonData))
-                            return
-                        }
-                        
-                        continuation.resume(with: .success(data))
-                    }
-                    .store(in: &cancellables)
-            }
-            
-        } catch let error as UnityBridgeAPIClientError {
-            throw error
-        } catch {
-            throw UnityBridgeAPIClientError.unknownError(error)
+        let notifications = NotificationCenter.default.notifications(named: target.notificationName)
+        guard let notification = await notifications.first(where: { notification in checkIsValidNotificationEvent(notification, forTarget: target)}) else {
+            throw UnityBridgeAPIClientError.receivedInvalidData
         }
+        
+        return try parseNotificationResponse(notification)
     }
     
     public func requestWithoutWaitingResponse(target: any UnityBridgeTargetType) async throws(UnityBridgeAPIClientError) {
@@ -105,8 +69,19 @@ extension UnityBridgeAPIClient: UnityBridgeAPIClientProtocol {
         logger.info("Completed calling request: \(target)")
     }
     
-    public func stream(onEventName: String) -> AsyncThrowingStream<Data, UnityBridgeAPIClientError> {
-        fatalError()
+    public func stream(onEventName eventName: String) -> AsyncStream<Data?> {
+        AsyncStream { continuation in
+            let task = Task {
+                for await notification in NotificationCenter.default.notifications(named: .init(eventName)) {
+                    let data = try? parseNotificationResponse(notification)
+                    continuation.yield(data)
+                }
+            }
+
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
     }
     
     public func performUnityCallback(eventName: String, id: String, encodedJSONRequestData: String) async throws {
@@ -133,5 +108,30 @@ private extension UnityBridgeAPIClient {
     func performWithSmallestDelay(nanoseconds: Int = 100_000_000, operation: sending () async throws -> Void) async throws {
         try await Task.sleep(for: .nanoseconds(nanoseconds))
         try await operation()
+    }
+    
+    func parseNotificationResponse(_ notification: Notification) throws(UnityBridgeAPIClientError) -> Data {
+        guard let jsonData = notification.userInfo?["data"] as? String, jsonData.isNotEmpty else {
+            throw UnityBridgeAPIClientError.receivedInvalidData
+        }
+        
+        logger.info("Received JSON data: \(jsonData)")
+        
+        guard let data = jsonData.data(using: .utf8) else {
+            throw UnityBridgeAPIClientError.receivedInvalidJSONData(content: jsonData)
+        }
+        
+        return data
+    }
+    
+    func checkIsValidNotificationEvent(_ notification: Notification, forTarget target: any UnityBridgeTargetType) -> Bool {
+        guard let userInfo = notification.userInfo else {
+            return false
+        }
+        guard let id = userInfo["id"] as? String, id.isNotEmpty, id == target.id else {
+            return false
+        }
+        
+        return true
     }
 }
