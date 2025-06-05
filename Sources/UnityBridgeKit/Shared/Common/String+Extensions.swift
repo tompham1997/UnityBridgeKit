@@ -9,7 +9,7 @@ import Foundation
 
 /// String extensions
 
-public extension String {
+extension String {
 
     /// An "" string.
     static let empty = ""
