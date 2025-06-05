@@ -23,11 +23,11 @@ public struct UnityCallbackProviderData: Sendable {
 
 public class UnityBridgeAPIClient {
     private let logger: Logger
-    private let unityCallbackProvider: (UnityCallbackProviderData) async throws -> Void
+    private let unityCallbackProvider: (UnityCallbackProviderData) -> Void
     
     public init(
         logger: Logger,
-        unityCallbackProvider: sending @escaping @isolated(any) (UnityCallbackProviderData) async throws -> Void
+        unityCallbackProvider: @escaping (UnityCallbackProviderData) -> Void
     ) {
         self.logger = logger
         self.unityCallbackProvider = unityCallbackProvider
@@ -60,11 +60,7 @@ extension UnityBridgeAPIClient: UnityBridgeAPIClientProtocol, @unchecked Sendabl
         logger.info("Started calling request: \(target)")
         
         let encodedJSONRequestData = try getEncodedJSONRequestData(target: target)
-        do {
-            try await performUnityCallback(eventName: target.eventName, id: target.id, encodedJSONRequestData: encodedJSONRequestData)
-        } catch {
-            throw .unknownError(error)
-        }
+        performUnityCallback(eventName: target.eventName, id: target.id, encodedJSONRequestData: encodedJSONRequestData)
         
         logger.info("Completed calling request: \(target)")
     }
@@ -89,13 +85,13 @@ extension UnityBridgeAPIClient: UnityBridgeAPIClientProtocol, @unchecked Sendabl
             .eraseToAnyPublisher()
     }
     
-    public func performUnityCallback(eventName: String, id: String, encodedJSONRequestData: String) async throws {
+    public func performUnityCallback(eventName: String, id: String, encodedJSONRequestData: String) {
         let providedData = UnityCallbackProviderData(
             eventName: eventName,
             id: id,
             encodedJSONRequestData: encodedJSONRequestData
         )
-        try await unityCallbackProvider(providedData)
+        unityCallbackProvider(providedData)
     }
 }
 

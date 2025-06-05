@@ -16,5 +16,5 @@ public protocol UnityBridgeAPIClientProtocol: Sendable {
     
     func stream(onEventName eventName: String) -> AnyPublisher<Data, Never>
     
-    func performUnityCallback(eventName: String, id: String, encodedJSONRequestData: String) async throws
+    func performUnityCallback(eventName: String, id: String, encodedJSONRequestData: String)
 }
