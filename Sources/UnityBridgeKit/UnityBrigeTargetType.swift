@@ -18,7 +18,7 @@ public protocol UnityBridgeTargetType: Equatable, Encodable, Sendable {
     var notificationName: Notification.Name { get }
 }
 
-extension UnityBridgeTargetType {
+public extension UnityBridgeTargetType {
     static func == (lhs: Self, rhs: Self) -> Bool {
         return lhs.id == rhs.id
     }
