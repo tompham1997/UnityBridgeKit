@@ -8,13 +8,15 @@
 import Testing
 import Foundation
 import Logging
+import Combine
 @testable import UnityBridgeKit
 
 
 class UnityBridgeAPIClientTests {
-
+    
     var sut: UnityBridgeAPIClient!
     var decoder: DecoderProtocol!
+    var cancellables: Set<AnyCancellable> = []
     
     init() {
         decoder = JSONDecoder()
@@ -23,11 +25,12 @@ class UnityBridgeAPIClientTests {
     deinit {
         decoder = nil
         sut = nil
+        cancellables.removeAll()
     }
     
     @Test("Test sending the request then received the valid data", arguments: [
         [
-            "id": "TEST_REQUEST_DATA",
+            "id": "TEST_REQUEST_DATA_1",
             "data": #"""
                     {
                         "data": {
@@ -40,7 +43,7 @@ class UnityBridgeAPIClientTests {
     ])
     func testUnityBridgeAPIClient_whenSendingValidRequest_thenShouldReceivedExpectedResponse(userInfo: [String: String]?) async throws {
         // Given:
-        let target = MockUnityTarget(id: "TEST_REQUEST_DATA")
+        let target = MockUnityTarget(id: "TEST_REQUEST_DATA_1")
         
         let sut = makeSUT { data in
             #expect(data.eventName == target.eventName)
@@ -56,7 +59,7 @@ class UnityBridgeAPIClientTests {
     
     @Test("Test throw receivedInvalidData Error when received invalid userInfo")
     func testUnityBridgeAPIClient_whenReceivedInvalidUserInfo_thenShouldThrowReceivedInvalidDataError() async throws {
-        let target = MockUnityTarget(id: "TEST_REQUEST_DATA")
+        let target = MockUnityTarget(id: "TEST_REQUEST_DATA_2")
         
         let sut = makeSUT { data in
             #expect(data.eventName == target.eventName)
@@ -73,7 +76,7 @@ class UnityBridgeAPIClientTests {
     
     @Test("Test streaming  data then received the valid data", arguments: [
         [
-            "id": "TEST_REQUEST_DATA",
+            "id": "TEST_REQUEST_DATA_3",
             "data": #"""
                     {
                         "data": {
@@ -84,21 +87,23 @@ class UnityBridgeAPIClientTests {
                     """#
         ]
     ])
-    func testUnityBridgeAPIClient_whenStreamData_thenShouldReceivedExpectedResponse(userInfo: [String: String]?) async throws {
-        // Given:
-        let target = MockUnityTarget(id: "TEST_REQUEST_DATA")
+    func testUnityBridgeAPIClient_whenStreamData_thenShouldReceivedExpectedResponse(userInfo: [String: String]?) async {
         
+        // Given:
+        let target = MockUnityTarget(id: "TEST_REQUEST_DATA_3")
         let sut = makeSUT { _ in }
         
         // When:
-        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2)) {
-            NotificationCenter.default.post(name: target.notificationName, object: nil, userInfo: userInfo)
-        }
-        
-        for await data in sut.stream(onEventName: target.eventName) {
-            let data = try #require(data)
-            let decodedResponse: TestModel = try decoder.decode(key: .data, data: data)
-            #expect(decodedResponse == TestModel(title: "tests_structure", value: 100))
+        await confirmation(#function) { expected in
+            sut.stream(onEventName: target.eventName)
+                .sink { data in
+                    let decodedResponse: TestModel? = try? self.decoder.decode(key: .data, data: data)
+                    #expect(decodedResponse == TestModel(title: "tests_structure", value: 100))
+                    expected()
+                }
+                .store(in: &cancellables)
+            
+            NotificationCenter.default.post(name: .init(target.eventName), object: nil, userInfo: userInfo)
         }
     }
 }

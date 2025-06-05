@@ -69,19 +69,24 @@ extension UnityBridgeAPIClient: UnityBridgeAPIClientProtocol, @unchecked Sendabl
         logger.info("Completed calling request: \(target)")
     }
     
-    public func stream(onEventName eventName: String) -> AsyncStream<Data?> {
-        AsyncStream { continuation in
-            let task = Task {
-                for await notification in NotificationCenter.default.notifications(named: .init(eventName)) {
-                    let data = try? parseNotificationResponse(notification)
-                    continuation.yield(data)
+    public func stream(onEventName eventName: String) -> AnyPublisher<Data, Never> {
+        return NotificationCenter.default.publisher(for: .init(eventName))
+            .compactMap { notification -> Data? in
+                guard let userInfo = notification.userInfo else {
+                    return nil
                 }
+                
+                guard let jsonData = userInfo["data"] as? String else {
+                    return nil
+                }
+                
+                guard let data = jsonData.data(using: .utf8) else {
+                    return nil
+                }
+                
+                return data
             }
-
-            continuation.onTermination = { _ in
-                task.cancel()
-            }
-        }
+            .eraseToAnyPublisher()
     }
     
     public func performUnityCallback(eventName: String, id: String, encodedJSONRequestData: String) async throws {

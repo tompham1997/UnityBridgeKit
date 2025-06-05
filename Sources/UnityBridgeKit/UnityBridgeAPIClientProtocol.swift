@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Combine
 
 public protocol UnityBridgeAPIClientProtocol: Sendable {
     
@@ -13,7 +14,7 @@ public protocol UnityBridgeAPIClientProtocol: Sendable {
     
     func requestWithoutWaitingResponse(target: any UnityBridgeTargetType) async throws(UnityBridgeAPIClientError)
     
-    func stream(onEventName eventName: String) -> AsyncStream<Data?>
+    func stream(onEventName eventName: String) -> AnyPublisher<Data, Never>
     
     func performUnityCallback(eventName: String, id: String, encodedJSONRequestData: String) async throws
 }
